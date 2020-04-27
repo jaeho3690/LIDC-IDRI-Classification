@@ -1,34 +1,31 @@
-import pandas as pd
-import numpy as np
+import argparse
+
+def str2bool(v):
+    if v.lower() in ['true', 1]:
+        return True
+    elif v.lower() in ['false', 0]:
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
-def get_test_label(meta,folder_list):
-    """This function returns the cancer label, and final data path by going through meta.csv
-    I removed the ambiguous label. This is when doctors have given a label 3.
-    Args:
-        meta: meta df file
-        folder_list: list of directories
-    Returns:
-        label_list: cancer label
-        final_folder_list: final directories"""
-    print("Getting cancer labels...")
-    
-    label_list =[]
-    final_folder_list =[]
-    for file in folder_list:
-        if len(file) ==61:
-            #/home/LUNG_DATA/Image/LIDC-IDRI-0819/0819_nodule2_slice19.npy
-            label = meta.loc[meta['original_image']==file[-24:-4],'is_cancer'].values[0]
-        else:
-            #/home/LUNG_DATA/Image/LIDC-IDRI-0819/0819_nodule20_slice19.npy
-            label = meta.loc[meta['original_image']==file[-25:-4],'is_cancer'].values[0]
-        if label =='Ambiguous':
-            pass
-        elif label =='True':
-            label_list.append(1)
-            final_folder_list.append(file)
-        else:
-            label_list.append(0)
-            final_folder_list.append(file)
-    return label_list, final_folder_list
+def count_params(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count

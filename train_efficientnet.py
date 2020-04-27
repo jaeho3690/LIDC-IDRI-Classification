@@ -1,0 +1,272 @@
+import pandas as pd
+import argparse
+import os
+from collections import OrderedDict
+from glob import glob
+import pickle
+from tqdm import tqdm
+from sklearn.model_selection import train_test_split
+
+import torch
+import torch.backends.cudnn as cudnn
+import torchvision
+import torch.nn as nn
+import torch.optim as optim
+from torch.optim import lr_scheduler
+
+from torchvision import datasets, models, transforms
+from PIL import Image
+from efficientnet_pytorch import EfficientNet
+
+from metric import Confusion_matrix
+from utils import *
+from classifier_dataset import ClassifierDataset
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    # model
+    parser.add_argument('--epochs', default=300, type=int, metavar='N',
+                        help='number of total epochs to run')
+    parser.add_argument('-b', '--batch_size', default=6, type=int,
+                        metavar='N', help='mini-batch size (default: 6)')
+    parser.add_argument('--early_stopping', default=30, type=int,
+                        metavar='N', help='early stopping (default: 30)')
+    parser.add_argument('--num_workers', default=4, type=int)
+
+    # data
+    parser.add_argument('--augmentation',default=False)
+    # optimizer
+    parser.add_argument('--optimizer', default='Adam',
+                        choices=['Adam', 'SGD'],
+                        help='loss: ' +
+                        ' | '.join(['Adam', 'SGD']) +
+                        ' (default: Adam)')
+    parser.add_argument('--lr', '--learning_rate', default=1e-5, type=float,
+                        metavar='LR', help='initial learning rate')
+    parser.add_argument('--momentum', default=0.9, type=float,
+                        help='momentum')
+    parser.add_argument('--weight_decay', default=1e-4, type=float,
+                        help='weight decay')
+    parser.add_argument('--nesterov', default=False, type=str2bool,
+                        help='nesterov')
+    config = parser.parse_args()
+
+    return config
+
+
+def train(train_loader,model,criterion,optimizer):
+    avg_meters = {'loss': AverageMeter(),
+                'accuracy': AverageMeter(),
+                'sensitivity':AverageMeter(),
+                'specificity': AverageMeter()}
+
+    model.train()
+
+    pbar = tqdm(total=len(train_loader))
+    for images, labels in train_loader:
+        images = images.cuda()
+        labels = labels.cuda()
+
+        outputs = model(images)
+        outputs = outputs.view(-1)
+        labels = labels.type_as(outputs)
+        loss = criterion(outputs, labels)
+        accuracy, sensitivity, specificity = Confusion_matrix(outputs,labels)
+        print(loss)
+
+        # compute gradient and do optimizing step
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        avg_meters['loss'].update(loss.item(),images.size(0))
+        avg_meters['accuracy'].update(accuracy,images.size(0))
+        avg_meters['sensitivity'].update(sensitivity,images.size(0))
+        avg_meters['specificity'].update(specificity,images.size(0))
+
+        postfix = OrderedDict([
+            ('loss', avg_meters['loss'].avg),
+            ('accuracy', avg_meters['accuracy'].avg),
+            ('sensitivity', avg_meters['sensitivity'].avg),
+            ('specificity', avg_meters['specificity'].avg)
+        ])
+        pbar.set_postfix(postfix)
+        pbar.update(1)
+    pbar.close()
+
+    return OrderedDict([('loss', avg_meters['loss'].avg),
+                        ('accuracy', avg_meters['accuracy'].avg),
+                        ('sensitivity', avg_meters['sensitivity'].avg),
+                        ('specificity', avg_meters['specificity'].avg),])
+
+def validate(val_loader,model,criterion):
+    avg_meters = {'loss': AverageMeter(),
+                'accuracy': AverageMeter(),
+                'sensitivity':AverageMeter(),
+                'specificity': AverageMeter()}
+
+    model.eval()
+
+    pbar = tqdm(total=len(val_loader))
+    for images, labels in val_loader:
+        images = images.cuda()
+        labels = labels.cuda()
+
+        outputs = model(images)
+        outputs = outputs.view(-1)
+        labels = labels.type_as(outputs)
+        loss = criterion(outputs, labels)
+        accuracy, sensitivity, specificity = Confusion_matrix(outputs,labels)
+
+        avg_meters['loss'].update(loss.item(),images.size(0))
+        avg_meters['accuracy'].update(accuracy,images.size(0))
+        avg_meters['sensitivity'].update(sensitivity,images.size(0))
+        avg_meters['specificity'].update(specificity,images.size(0))
+
+        postfix = OrderedDict([
+            ('loss', avg_meters['loss'].avg),
+            ('accuracy', avg_meters['accuracy'].avg),
+            ('sensitivity', avg_meters['sensitivity'].avg),
+            ('specificity', avg_meters['specificity'].avg)
+        ])
+
+        pbar.set_postfix(postfix)
+        pbar.update(1)
+    pbar.close()
+
+
+    return OrderedDict([('loss', avg_meters['loss'].avg),
+                        ('accuracy', avg_meters['accuracy'].avg),
+                        ('sensitivity', avg_meters['sensitivity'].avg),
+                        ('specificity', avg_meters['specificity'].avg),])
+
+
+
+
+def main():
+    # Get configuration
+    config = vars(parse_args())
+
+    # Data directory
+    TRAIN_DIR = '/home/LUNG_DATA/Efficient_net/train/'
+    LABEL_DIR = '/home/LUNG_DATA/Efficient_net/label/'
+
+    # Model Output directory
+    OUTPUT_DIR = '/home/jaeho_ubuntu/Classification/model_output/'
+
+    with open(LABEL_DIR+'train.txt','rb') as fp:
+        train_label = pickle.load(fp)
+
+
+
+    # Get image files
+    train_images = os.listdir(TRAIN_DIR)
+    train_images.sort()
+    train_images= [TRAIN_DIR+ x for x in train_images]
+
+    validation_proportion = 0.25
+
+    # This will ensure that only the train/validation images that were used in U-Net will be used to train the cancer classifier
+    train_image_paths,val_image_paths,train_label,val_label = train_test_split(train_images,train_label,test_size=validation_proportion,random_state=1)
+
+    print("*"*50)
+    print("The length of image are train: {} validation: {}".format(len(train_image_paths),len(val_image_paths)))
+
+
+    # Create Dataset
+    train_dataset = ClassifierDataset(train_image_paths,train_label,config['augmentation'])
+    val_dataset = ClassifierDataset(val_image_paths,val_label,config['augmentation'])
+
+    cudnn.benchmark = True
+    # Model
+    model = EfficientNet.from_pretrained('efficientnet-b0')
+
+
+    num_ftrs = model._fc.in_features
+    model._fc = nn.Sequential(nn.Linear(num_ftrs,1),
+                                nn.Sigmoid())
+
+    criterion = nn.BCEWithLogitsLoss().cuda()
+
+    # Decay LR by a factor of 0.1 every 7 epochs
+
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        model = nn.DataParallel(model)
+    model = model.cuda()
+    params = filter(lambda p: p.requires_grad, model.parameters())
+
+    if config['optimizer'] == 'Adam':
+        optimizer = optim.Adam(params, lr=config['lr'], weight_decay=config['weight_decay'])
+    elif config['optimizer'] == 'SGD':
+        optimizer = optim.SGD(params, lr=config['lr'], momentum=config['momentum'],nesterov=config['nesterov'], weight_decay=config['weight_decay'])
+    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    # Create Dataloader
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=config['batch_size'],
+        shuffle=True,
+        pin_memory=True,
+        drop_last=True,
+        num_workers=2)
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=config['batch_size'],
+        shuffle=False,
+        pin_memory=True,
+        drop_last=False,
+        num_workers=2)
+    
+    log= pd.DataFrame(index=[],columns= ['epoch', 'loss', 'accuracy','sensitivity','specificity,',
+                                        'val_loss', 'val_accuracy','val_sensitivity','val_specificity'])
+
+    best_sensitivity= 0
+    trigger = 0
+
+    for epoch in range(config['epochs']):
+
+        # train for one epoch
+        train_log = train(train_loader, model, criterion, optimizer)
+        # evaluate on validation set
+        val_log = validate(val_loader, model, criterion)
+
+        print('Training epoch [{}/{}], Training BCE loss:{:.4f}, Training accuracy:{:.4f}, Training sensitivity:{:.4f}, Training specificity:{:.4f}, \
+                    Validation BCE loss:{:.4f}, Validation accuracy:{:.4f}, Validation sensitivity:{:.4f}, Validation specificity:{:.4f},'.format( 
+            epoch + 1, config['epochs'], train_log['loss'], train_log['accuracy'], train_log['sensitivity'], train_log['specificity'],val_log['loss'], val_log['accuracy'],val_log['sensitivity'], val_log['specificity']))
+
+        tmp = pd.Series([
+            epoch,
+            train_log['loss'],
+            train_log['accuracy'],
+            train_log['sensitivity'],
+            train_log['specificity'],
+            val_log['loss'],
+            val_log['accuracy'],
+            val_log['sensitivity'],
+            val_log['specificity'],
+        ], index=['epoch', 'loss', 'accuracy','sensitivity','specificity,','val_loss', 'val_accuracy','val_sensitivity','val_specificity'])
+
+        log = log.append(tmp, ignore_index=True)
+        log.to_csv(OUTPUT_DIR +'log.csv', index=False)
+
+        trigger += 1
+
+        if val_log['sensitivity'] > best_sensitivity:
+            torch.save(model.state_dict(), OUTPUT_DIR +'model.pth')
+            best_sensitivity= val_log['sensitivity']
+            print("=> saved best model as validation sensitivity is greater than previous best accuracy")
+            trigger = 0
+
+        # early stopping
+        if config['early_stopping'] >= 0 and trigger >= config['early_stopping']:
+            print("=> early stopping")
+            break
+
+        torch.cuda.empty_cache()
+
+if __name__ == '__main__':
+    main()
+
+
+    

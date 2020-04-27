@@ -6,6 +6,7 @@ import seaborn as sns
 from scipy import ndimage as ndi
 from scipy import signal
 import pickle
+from sklearn.preprocessing import OneHotEncoder
 def crop_nodule(coord,image,dim=112):
     """
     Returns a cropped image of size 2*dim x 2*dim when dim. There are corner cases in the border.
@@ -52,7 +53,7 @@ def create_3channel(coord,image):
     patch = crop_nodule(coord,image,dim=112)
     grad_patch = gradient_transform(patch)
     lap_patch = laplacian_transform(patch)
-    output = np.stack([patch,grad_patch,lap_patch],axis=0)
+    output = np.stack([patch,grad_patch,lap_patch],axis=2)
     return output
     
 def main():
@@ -85,6 +86,8 @@ def main():
     test_image_paths = list(test_meta['original_image'])
     test_mask_paths = list(test_meta['mask_image'])
     test_label = list(test_meta['is_cancer'].apply(lambda x: 1 if x=='True' else 0))
+
+
 
     # Get clean images from clean_meta.csv
     #lean_meta = clean_meta['original_image'].apply(lambda x:CLEAN_DIR_IMG+x)
@@ -120,7 +123,7 @@ def main():
     with open(data_label+'train.txt','wb') as fp:
         pickle.dump(train_label,fp)
     with open(data_label+'test.txt','wb') as fp:
-        pickle.dump(train_label,fp)      
+        pickle.dump(test_label,fp)      
 
 
 if __name__ == "__main__":
