@@ -6,6 +6,7 @@ from glob import glob
 import pickle
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
+import yaml
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -26,10 +27,12 @@ from classifier_dataset import ClassifierDataset
 def parse_args():
     parser = argparse.ArgumentParser()
     # model
-    parser.add_argument('--epochs', default=300, type=int, metavar='N',
+    parser.add_argument('--model_version', default=0,type=int,
+                        help='model name: efficientnetb- ',choices=[0,1,2,3,4,5,6])
+    parser.add_argument('--epochs', default=200, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('-b', '--batch_size', default=6, type=int,
-                        metavar='N', help='mini-batch size (default: 6)')
+    parser.add_argument('-b', '--batch_size', default=24, type=int,
+                        metavar='N', help='mini-batch size (default: 24)')
     parser.add_argument('--early_stopping', default=30, type=int,
                         metavar='N', help='early stopping (default: 30)')
     parser.add_argument('--num_workers', default=4, type=int)
@@ -73,7 +76,7 @@ def train(train_loader,model,criterion,optimizer):
         labels = labels.type_as(outputs)
         loss = criterion(outputs, labels)
         accuracy, sensitivity, specificity = Confusion_matrix(outputs,labels)
-        print(loss)
+        #print(loss)
 
         # compute gradient and do optimizing step
         optimizer.zero_grad()
@@ -148,12 +151,26 @@ def main():
     # Get configuration
     config = vars(parse_args())
 
+    # Model Output directory
+    OUTPUT_DIR = '/home/jaeho_ubuntu/Classification/model_output/'
+    os.makedirs(OUTPUT_DIR+'efficientnetb{}'.format(config['model_version']),exist_ok=True)
+    print('Made directory called efficientnetb{}'.format(config['model_version']))
+
+    print('-' * 20)
+    print("Configuration Setting as follow")
+    for key in config:
+        print('{}: {}'.format(key, config[key]))
+    print('-' * 20)
+    
+    #save configuration
+    with open(OUTPUT_DIR+'efficientnetb{}/config.yml'.format(config['model_version']), 'w') as f:
+        yaml.dump(config, f)
+
     # Data directory
     TRAIN_DIR = '/home/LUNG_DATA/Efficient_net/train/'
     LABEL_DIR = '/home/LUNG_DATA/Efficient_net/label/'
 
-    # Model Output directory
-    OUTPUT_DIR = '/home/jaeho_ubuntu/Classification/model_output/'
+
 
     with open(LABEL_DIR+'train.txt','rb') as fp:
         train_label = pickle.load(fp)
@@ -177,12 +194,12 @@ def main():
     # Create Dataset
     train_dataset = ClassifierDataset(train_image_paths,train_label,config['augmentation'])
     val_dataset = ClassifierDataset(val_image_paths,val_label,config['augmentation'])
-
-    cudnn.benchmark = True
+    
     # Model
-    model = EfficientNet.from_pretrained('efficientnet-b0')
+    cudnn.benchmark = True
+    model = EfficientNet.from_pretrained('efficientnet-b{}'.format(config['model_version']))
 
-
+    #Fine tuning top layers
     num_ftrs = model._fc.in_features
     model._fc = nn.Sequential(nn.Linear(num_ftrs,1),
                                 nn.Sigmoid())
@@ -201,7 +218,7 @@ def main():
         optimizer = optim.Adam(params, lr=config['lr'], weight_decay=config['weight_decay'])
     elif config['optimizer'] == 'SGD':
         optimizer = optim.SGD(params, lr=config['lr'], momentum=config['momentum'],nesterov=config['nesterov'], weight_decay=config['weight_decay'])
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    #exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
     # Create Dataloader
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -209,14 +226,14 @@ def main():
         shuffle=True,
         pin_memory=True,
         drop_last=True,
-        num_workers=2)
+        num_workers=6)
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config['batch_size'],
         shuffle=False,
         pin_memory=True,
         drop_last=False,
-        num_workers=2)
+        num_workers=6)
     
     log= pd.DataFrame(index=[],columns= ['epoch', 'loss', 'accuracy','sensitivity','specificity,',
                                         'val_loss', 'val_accuracy','val_sensitivity','val_specificity'])
@@ -248,14 +265,14 @@ def main():
         ], index=['epoch', 'loss', 'accuracy','sensitivity','specificity,','val_loss', 'val_accuracy','val_sensitivity','val_specificity'])
 
         log = log.append(tmp, ignore_index=True)
-        log.to_csv(OUTPUT_DIR +'log.csv', index=False)
+        log.to_csv(OUTPUT_DIR+'efficientnetb{}/log.csv'.format(config['model_version']), index=False)
 
         trigger += 1
 
         if val_log['sensitivity'] > best_sensitivity:
-            torch.save(model.state_dict(), OUTPUT_DIR +'model.pth')
+            torch.save(model.state_dict(), OUTPUT_DIR+'efficientnetb{}/model.pth'.format(config['model_version']))
             best_sensitivity= val_log['sensitivity']
-            print("=> saved best model as validation sensitivity is greater than previous best accuracy")
+            print("=> saved best model as validation sensitivity is greater than previous best sensitivity")
             trigger = 0
 
         # early stopping

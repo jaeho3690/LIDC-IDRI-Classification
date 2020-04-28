@@ -27,7 +27,6 @@ def Confusion_matrix(output, label):
     TN = conf_matrix[0,0].item()
     FP = conf_matrix[0,1].item()
     FN = conf_matrix[1,0].item()
-    print(TP,TN,FP,FN)
 
     total += len(label)
     accuracy = (TP+TN)/total
@@ -35,3 +34,21 @@ def Confusion_matrix(output, label):
     specificity = TN / (TN+FP+ smooth)
 
     return  accuracy, sensitivity, specificity
+
+def Confusion_matrix2(output, label):
+    total = 0
+    smooth = 0.1
+
+    output_prob = (output>0.5).int()
+    label = label.int()
+
+    conf_matrix = torch.zeros(2, 2)
+    for t, p in zip(label, output_prob):
+        conf_matrix[t, p] += 1
+    TP = conf_matrix[1,1].item()
+    TN = conf_matrix[0,0].item()
+    FP = conf_matrix[0,1].item()
+    FN = conf_matrix[1,0].item()
+
+
+    return  TP,TN,FN,FP

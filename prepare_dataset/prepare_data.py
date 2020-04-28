@@ -57,10 +57,12 @@ def create_3channel(coord,image):
     return output
     
 def main():
-    # Directory to load data
+    # Directory to load data with nodules
     IMAGE_DIR = '/home/LUNG_DATA/Image_1/'
     MASK_DIR = '/home/LUNG_DATA/Mask_1/'
-    #CLEAN_DIR_IMG ='/home/LUNG_DATA/Clean_1/Image/'
+
+    # Directory to load data without any nodules, Thus, a clean lung image
+    CLEAN_DIR_IMG ='/home/LUNG_DATA/Clean_1/Image/'
 
     # Directory to save data
     train_output_rgb_dir = '/home/LUNG_DATA/Efficient_net/train/'
@@ -70,15 +72,21 @@ def main():
 
     #Meta Information
     meta = pd.read_csv('/home/LUNG_DATA/meta_csv/meta.csv')
-    #clean_meta = pd.read_csv('clean_meta.csv')
+
+    #Clean Meta Information
+    clean_meta = pd.read_csv('/home/LUNG_DATA/meta_csv/clean_meta.csv')
 
 
     # Get train/test label from meta.csv
     meta['original_image']= meta['original_image'].apply(lambda x:IMAGE_DIR + x +'.npy')
     meta['mask_image'] = meta['mask_image'].apply(lambda x:MASK_DIR + x +'.npy')
 
-    train_meta = meta[(meta['Segmentation_train']==True) & (meta['is_cancer']!='Ambiguous')]
-    test_meta = meta[(meta['Segmentation_train']==False) & (meta['is_cancer']!='Ambiguous')]
+    # Get train/test label from meta.csv
+    clean_meta['original_image']= clean_meta['original_image'].apply(lambda x:CLEAN_DIR_IMG + x +'.npy')
+
+    # Get images that were used to train Segmentation model and that is also not labeled as Ambiguous
+    train_meta = meta[(meta['data_split']!='Test') & (meta['is_cancer']!='Ambiguous')]
+    test_meta = meta[(meta['data_split']=='Test') & (meta['is_cancer']!='Ambiguous')]
     train_image_paths = list(train_meta['original_image'])
     train_mask_paths = list(train_meta['mask_image'])
     train_label = list(train_meta['is_cancer'].apply(lambda x: 1 if x=='True' else 0))
@@ -87,15 +95,19 @@ def main():
     test_mask_paths = list(test_meta['mask_image'])
     test_label = list(test_meta['is_cancer'].apply(lambda x: 1 if x=='True' else 0))
 
+    # Get clean images directory as list
+    # Only get 20% of train_image_paths
+    """proportion_train = int(len(train_meta)*0.2)
+    proportion_test = int(len(test_meta)*0.2)
+    clean_images = list(clean_meta['original_image'])
+    train_clean_paths = clean_images[:proportion_train]
+    test_clean_paths = clean_images[proportion_train:proportion_train+proportion_test]
+    clean_label_train = [0 for x in range(len(train_clean_paths))]
+    clean_label_test = [0 for x in range(len(test_clean_paths))]"""
 
 
-    # Get clean images from clean_meta.csv
-    #lean_meta = clean_meta['original_image'].apply(lambda x:CLEAN_DIR_IMG+x)
-    #train_clean = clean_meta
-
-
-
-
+    # Extend the original train, test list
+    # DOO  ITTT FROMMM HEREEE
 
 
     # This will ensure that only the train/validation images that were used in U-Net will be used to train the cancer classifier
@@ -124,7 +136,8 @@ def main():
         pickle.dump(train_label,fp)
     with open(data_label+'test.txt','wb') as fp:
         pickle.dump(test_label,fp)      
-
+    print("TOTAL OF CANCER: {}, NON-CANCEROUS:{}, CLEAN:{} IMAGES WERE SAVED FOR TRAIN".format(np.sum(train_label),len(train_label)-np.sum(train_label)))
+    print("TOTAL OF {} CANCER and {} NON-CANCER IMAGES WERE SAVED FOR TEST".format(np.sum(test_label),len(train_label)-np.sum(test_label)))
 
 if __name__ == "__main__":
     main()
