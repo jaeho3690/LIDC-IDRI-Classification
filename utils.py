@@ -1,4 +1,5 @@
 import argparse
+import os
 
 def str2bool(v):
     if v.lower() in ['true', 1]:
@@ -29,3 +30,8 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
+def load_directories(root_dir):
+    images_list = os.listdir(root_dir)
+    images_list.sort()
+    return [root_dir+ x for x in images_list]

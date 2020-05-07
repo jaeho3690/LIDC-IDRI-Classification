@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import argparse
 import os
 from collections import OrderedDict
@@ -145,7 +146,10 @@ def validate(val_loader,model,criterion):
                         ('specificity', avg_meters['specificity'].avg),])
 
 
-
+def load_directories(root_dir):
+    images_list = os.listdir(root_dir)
+    images_list.sort()
+    return [root_dir+ x for x in images_list]
 
 def main():
     # Get configuration
@@ -168,29 +172,44 @@ def main():
 
     # Data directory
     TRAIN_DIR = '/home/LUNG_DATA/Efficient_net/train/'
+    VAL_DIR = '/home/LUNG_DATA/Efficient_net/val/'
+    CLEAN_TRAIN_DIR ='/home/LUNG_DATA/Efficient_net/clean_train/'
+    CLEAN_VAL_DIR = '/home/LUNG_DATA/Efficient_net/clean_val/'
     LABEL_DIR = '/home/LUNG_DATA/Efficient_net/label/'
 
 
 
     with open(LABEL_DIR+'train.txt','rb') as fp:
         train_label = pickle.load(fp)
+    with open(LABEL_DIR+'val.txt','rb') as fp:
+        val_label = pickle.load(fp)
+    with open(LABEL_DIR+'clean_train.txt','rb') as fp:
+        clean_train_label = pickle.load(fp)
+    with open(LABEL_DIR+'clean_val.txt','rb') as fp:
+        clean_val_label = pickle.load(fp)
 
 
+    # Get image files path as list
+    train_image_paths = load_directories(TRAIN_DIR)
+    val_image_paths = load_directories(VAL_DIR)
+    clean_train_images_paths = load_directories(CLEAN_TRAIN_DIR)
+    clean_val_images_paths = load_directories(CLEAN_VAL_DIR)
 
-    # Get image files
-    train_images = os.listdir(TRAIN_DIR)
-    train_images.sort()
-    train_images= [TRAIN_DIR+ x for x in train_images]
+    train_image_paths.extend(clean_train_images_paths)
+    val_image_paths.extend(clean_val_images_paths)
+    train_label.extend(clean_train_label)
+    val_label.extend(clean_val_label)
 
-    validation_proportion = 0.25
 
-    # This will ensure that only the train/validation images that were used in U-Net will be used to train the cancer classifier
-    train_image_paths,val_image_paths,train_label,val_label = train_test_split(train_images,train_label,test_size=validation_proportion,random_state=1)
-
-    print("*"*50)
+    print("="*50)
     print("The length of image are train: {} validation: {}".format(len(train_image_paths),len(val_image_paths)))
 
-
+    print("============================TRAINING===========================================")
+    print("Cancer nodules:{} Non Cancer nodules:{}".format(np.sum(train_label),len(train_label)-np.sum(train_label)))
+    print("Ratio is {:4f}".format(np.sum(train_label)/(len(train_label)-np.sum(train_label))))
+    print("============================VALIDATION=========================================")
+    print("Cancer nodules:{} Non Cancer nodules:{}".format(np.sum(val_label),len(val_label)-np.sum(val_label)))
+    print("Ratio is {:4f}".format(np.sum(val_label)/(len(val_label)-np.sum(val_label))))
     # Create Dataset
     train_dataset = ClassifierDataset(train_image_paths,train_label,config['augmentation'])
     val_dataset = ClassifierDataset(val_image_paths,val_label,config['augmentation'])

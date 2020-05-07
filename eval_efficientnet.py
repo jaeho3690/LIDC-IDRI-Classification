@@ -78,12 +78,15 @@ def main():
 
     OUTPUT_DIR = '/home/jaeho_ubuntu/Classification/model_output/efficientnetb{}/'.format(args['model_version'])
     TEST_DIR = '/home/LUNG_DATA/Efficient_net/test/'
+    CLEAN_TEST_DIR = '/home/LUNG_DATA/Efficient_net/clean_test/'
     LABEL_DIR ='/home/LUNG_DATA/Efficient_net/label/'
 
     with open(OUTPUT_DIR+'config.yml', 'r') as f:
         config = yaml.load(f)
     with open(LABEL_DIR+'test.txt','rb') as fp:
         test_label = pickle.load(fp)
+    with open(LABEL_DIR+'clean_test.txt','rb') as fp:
+        clean_test_label = pickle.load(fp)
 
     print('-'*20)
     for key in config.keys():
@@ -107,18 +110,20 @@ def main():
     model = model.cuda()
 
     # Get image files
-    test_images = os.listdir(TEST_DIR)
-    test_images.sort()
-    test_images= [TEST_DIR+ x for x in test_images]
+    test_image_paths = load_directories(TEST_DIR)
+    clean_test_image_paths = load_directories(CLEAN_TEST_DIR)
 
-    assert len(test_images)==len(test_label), "Length of test images and test label not same"
+    test_image_paths.extend(clean_test_image_paths)
+    test_label.extend(clean_test_label)
 
-    print("Test Dataset has {} nodule images".format(len(test_images)))
-    cancer_nodules = np.sum(test_label)
-    non_cancer_nodules = len(test_label)- cancer_nodules
-    print("Cancer nodules:{} Non Cancer nodules:{}".format(cancer_nodules,non_cancer_nodules))
 
-    test_dataset = ClassifierDataset(test_images,test_label,Albumentation=False)
+
+    assert len(test_image_paths)==len(test_label), "Length of test images and test label not same"
+    print("============================TESTING===========================================")
+    print("Cancer nodules:{} Non Cancer nodules:{}".format(np.sum(test_label),len(test_label)-np.sum(test_label)))
+    print("Ratio is {:4f}".format(np.sum(test_label)/(len(test_label)-np.sum(test_label))))
+
+    test_dataset = ClassifierDataset(test_image_paths,test_label,Albumentation=False)
 
     test_loader = torch.utils.data.DataLoader(
         test_dataset,

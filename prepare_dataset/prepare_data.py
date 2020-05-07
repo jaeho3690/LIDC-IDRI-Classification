@@ -7,6 +7,30 @@ from scipy import ndimage as ndi
 from scipy import signal
 import pickle
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.feature_extraction import image
+
+
+def get_path_label(meta,is_clean=False):
+    """This returns the path of image and mask and label list """
+    image_path = list(meta['original_image'])
+    mask_path = list(meta['mask_image'])
+    if is_clean:
+        label = [0 for x in range(len(image_path))]
+    else:
+        label = list(meta['is_cancer'].apply(lambda x: 1 if x=='True' else 0))
+    return image_path,mask_path,label
+
+def crop_clean_patch(clean_image,dim=224):
+    """Crop random patch size of dim from clean dataset"""
+    clean_image = clean_image[100:400,100:400]
+    for i in range(100):  
+        patch = image.extract_patches_2d(clean_image,(dim,dim),1)
+        patch = np.squeeze(patch)
+        if np.sum(patch)> 2000:
+            return patch
+    return patch
+
+
 def crop_nodule(coord,image,dim=112):
     """
     Returns a cropped image of size 2*dim x 2*dim when dim. There are corner cases in the border.
@@ -55,6 +79,15 @@ def create_3channel(coord,image):
     lap_patch = laplacian_transform(patch)
     output = np.stack([patch,grad_patch,lap_patch],axis=2)
     return output
+# Lets try with Mask layer later.
+def create_3channel_clean(image):
+    """create 3 channel for clean dataset"""
+    patch = crop_clean_patch(image)
+    grad_patch = gradient_transform(patch)
+    lap_patch = laplacian_transform(patch)
+    output = np.stack([patch,grad_patch,lap_patch],axis=2)
+    return output
+
     
 def main():
     # Directory to load data with nodules
@@ -62,20 +95,25 @@ def main():
     MASK_DIR = '/home/LUNG_DATA/Mask_1/'
 
     # Directory to load data without any nodules, Thus, a clean lung image
-    CLEAN_DIR_IMG ='/home/LUNG_DATA/Clean_1/Image/'
+    CLEAN_DIR_IMG ='/home/LUNG_DATA/Clean/Image/'
+
 
     # Directory to save data
     train_output_rgb_dir = '/home/LUNG_DATA/Efficient_net/train/'
+    val_output_rgb_dir = '/home/LUNG_DATA/Efficient_net/val/'
     test_output_rgb_dir = '/home/LUNG_DATA/Efficient_net/test/'
     data_label ='/home/LUNG_DATA/Efficient_net/label/'
 
+    # Directory to save clean data
+    clean_train_output_rgb_dir = '/home/LUNG_DATA/Efficient_net/clean_train/'
+    clean_val_output_rgb_dir = '/home/LUNG_DATA/Efficient_net/clean_val/'
+    clean_test_output_rgb_dir = '/home/LUNG_DATA/Efficient_net/clean_test/'    
 
     #Meta Information
     meta = pd.read_csv('/home/LUNG_DATA/meta_csv/meta.csv')
 
     #Clean Meta Information
     clean_meta = pd.read_csv('/home/LUNG_DATA/meta_csv/clean_meta.csv')
-
 
     # Get train/test label from meta.csv
     meta['original_image']= meta['original_image'].apply(lambda x:IMAGE_DIR + x +'.npy')
@@ -85,37 +123,28 @@ def main():
     clean_meta['original_image']= clean_meta['original_image'].apply(lambda x:CLEAN_DIR_IMG + x +'.npy')
 
     # Get images that were used to train Segmentation model and that is also not labeled as Ambiguous
-    train_meta = meta[(meta['data_split']!='Test') & (meta['is_cancer']!='Ambiguous')]
+    train_meta = meta[(meta['data_split']=='Train') & (meta['is_cancer']!='Ambiguous')]
+    val_meta = meta[(meta['data_split']=='Validation') & (meta['is_cancer']!='Ambiguous')]
     test_meta = meta[(meta['data_split']=='Test') & (meta['is_cancer']!='Ambiguous')]
-    train_image_paths = list(train_meta['original_image'])
-    train_mask_paths = list(train_meta['mask_image'])
-    train_label = list(train_meta['is_cancer'].apply(lambda x: 1 if x=='True' else 0))
 
-    test_image_paths = list(test_meta['original_image'])
-    test_mask_paths = list(test_meta['mask_image'])
-    test_label = list(test_meta['is_cancer'].apply(lambda x: 1 if x=='True' else 0))
+    # Get clean images that were used to train Segmentation model and that is also not labeled as Ambiguous
+    clean_train_meta = clean_meta[(clean_meta['data_split']=='Train')]
+    clean_val_meta = clean_meta[(clean_meta['data_split']=='Validation')]
+    clean_test_meta = clean_meta[(clean_meta['data_split']=='Test')]
 
-    # Get clean images directory as list
-    # Only get 20% of train_image_paths
-    """proportion_train = int(len(train_meta)*0.2)
-    proportion_test = int(len(test_meta)*0.2)
-    clean_images = list(clean_meta['original_image'])
-    train_clean_paths = clean_images[:proportion_train]
-    test_clean_paths = clean_images[proportion_train:proportion_train+proportion_test]
-    clean_label_train = [0 for x in range(len(train_clean_paths))]
-    clean_label_test = [0 for x in range(len(test_clean_paths))]"""
+    train_image_paths,train_mask_paths, train_label  = get_path_label(train_meta)
+    val_image_paths, val_mask_paths, val_label = get_path_label(val_meta)
+    test_image_paths, test_mask_paths, test_label = get_path_label(test_meta)
+
+    clean_train_image_paths,_ ,clean_train_label  = get_path_label(clean_train_meta,True)
+    clean_val_image_paths,_ ,clean_val_label  = get_path_label(clean_val_meta,True)
+    clean_test_image_paths,_ ,clean_test_label  = get_path_label(clean_test_meta,True)
 
 
-    # Extend the original train, test list
-    # DOO  ITTT FROMMM HEREEE
-
-
-    # This will ensure that only the train/validation images that were used in U-Net will be used to train the cancer classifier
-    
     print("*"*50)
     print("The length of image are train: {} test: {}".format(len(train_image_paths),len(test_image_paths)))
     print("Ambiguity will be filtered")
-    #load label file
+    #load train and save as 3 channel file
     for train_img,train_mask in zip(train_image_paths,train_mask_paths):
         naming = train_img[-23:]
         mask = np.load(train_mask)
@@ -123,7 +152,16 @@ def main():
         rgb= create_3channel(ndi.center_of_mass(mask),image)
         print("Saved {}".format(naming))
         np.save(train_output_rgb_dir+naming,rgb)
-    
+
+    #load validation and save as 3 channel file
+    for val_img,val_mask in zip(val_image_paths,val_mask_paths):
+        naming = val_img[-23:]
+        mask = np.load(val_mask)
+        image = np.load(val_img)
+        rgb= create_3channel(ndi.center_of_mass(mask),image)
+        print("Saved {}".format(naming))
+        np.save(val_output_rgb_dir+naming,rgb)
+
     for test_img,test_mask in zip(test_image_paths,test_mask_paths):
         naming = test_img[-23:]
         mask = np.load(test_mask)
@@ -132,12 +170,57 @@ def main():
         print("Saved {}".format(naming))
         np.save(test_output_rgb_dir+naming,rgb)
 
+    ################################################################################################################
+    # The dataset is imbalanced. There are more cancers than non-cancers                                           #
+    # We will balance this data by adding clean dataset to the model                                               #
+    # I have prefigured out how much clean data set I need for train, validation, test. The number are 783,362,830.#
+    ################################################################################################################
+    for train_img in clean_train_image_paths[:783]:
+        naming = train_img[-23:]
+        image = np.load(train_img)
+        rgb = create_3channel_clean(image)
+        print("Saved {}".format(naming))
+        np.save(clean_train_output_rgb_dir+naming,rgb)
+
+    for val_img in clean_val_image_paths[:362]:
+        naming = val_img[-23:]
+        image = np.load(val_img)
+        rgb = create_3channel_clean(image)
+        print("Saved {}".format(naming))
+        np.save(clean_val_output_rgb_dir+naming,rgb)
+
+    for test_img in clean_test_image_paths[:830]:
+        naming = test_img[-23:]
+        image = np.load(test_img)
+        rgb = create_3channel_clean(image)
+        print("Saved {}".format(naming))
+        np.save(clean_test_output_rgb_dir+naming,rgb)
+
     with open(data_label+'train.txt','wb') as fp:
         pickle.dump(train_label,fp)
+    with open(data_label+'val.txt','wb') as fp:
+        pickle.dump(val_label,fp)
     with open(data_label+'test.txt','wb') as fp:
         pickle.dump(test_label,fp)      
-    print("TOTAL OF CANCER: {}, NON-CANCEROUS:{}, CLEAN:{} IMAGES WERE SAVED FOR TRAIN".format(np.sum(train_label),len(train_label)-np.sum(train_label)))
-    print("TOTAL OF {} CANCER and {} NON-CANCER IMAGES WERE SAVED FOR TEST".format(np.sum(test_label),len(train_label)-np.sum(test_label)))
+
+    clean_train_label = clean_train_label[:783]
+    clean_val_label = clean_val_label[:362]
+    clean_test_label = clean_test_label[:830]
+
+    print(clean_train_label)
+    with open(data_label+'clean_train.txt','wb') as fp:
+        pickle.dump(clean_train_label,fp)
+    with open(data_label+'clean_val.txt','wb') as fp:
+        pickle.dump(clean_val_label,fp)
+    with open(data_label+'clean_test.txt','wb') as fp:
+        pickle.dump(clean_test_label,fp)      
+
+    print("TOTAL OF CANCER: {}, NON-CANCEROUS:{} IMAGES WERE SAVED FOR TRAIN".format(np.sum(train_label),len(train_label)-np.sum(train_label)))
+    print("TOTAL OF CANCER: {}, NON-CANCEROUS:{} IMAGES WERE SAVED FOR VAL".format(np.sum(val_label),len(val_label)-np.sum(val_label)))
+    print("TOTAL OF CANCER: {}, NON-CANCEROUS:{} IMAGES WERE SAVED FOR TEST".format(np.sum(test_label),len(train_label)-np.sum(test_label)))
+
+    print("AS THE DATA IS IMBALANCED, WE ADDED CLEAN IMAGES AS FOLLOWING")
+    print("TRAIN: {}, VAL: {}, TEST: {}".format(len(clean_train_label),len(clean_val_label),len(clean_test_label)))
 
 if __name__ == "__main__":
     main()
