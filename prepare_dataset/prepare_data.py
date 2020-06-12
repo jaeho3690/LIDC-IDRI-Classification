@@ -175,21 +175,21 @@ def main():
     # We will balance this data by adding clean dataset to the model                                               #
     # I have prefigured out how much clean data set I need for train, validation, test. The number are 783,362,830.#
     ################################################################################################################
-    for train_img in clean_train_image_paths[:783]:
+    for train_img in clean_train_image_paths[:800]:
         naming = train_img[-23:]
         image = np.load(train_img)
         rgb = create_3channel_clean(image)
         print("Saved {}".format(naming))
         np.save(clean_train_output_rgb_dir+naming,rgb)
 
-    for val_img in clean_val_image_paths[:362]:
+    for val_img in clean_val_image_paths[:400]:
         naming = val_img[-23:]
         image = np.load(val_img)
         rgb = create_3channel_clean(image)
         print("Saved {}".format(naming))
         np.save(clean_val_output_rgb_dir+naming,rgb)
 
-    for test_img in clean_test_image_paths[:830]:
+    for test_img in clean_test_image_paths[:400]:
         naming = test_img[-23:]
         image = np.load(test_img)
         rgb = create_3channel_clean(image)
@@ -203,11 +203,10 @@ def main():
     with open(data_label+'test.txt','wb') as fp:
         pickle.dump(test_label,fp)      
 
-    clean_train_label = clean_train_label[:783]
-    clean_val_label = clean_val_label[:362]
-    clean_test_label = clean_test_label[:830]
+    clean_train_label = clean_train_label[:800]
+    clean_val_label = clean_val_label[:400]
+    clean_test_label = clean_test_label[:400]
 
-    print(clean_train_label)
     with open(data_label+'clean_train.txt','wb') as fp:
         pickle.dump(clean_train_label,fp)
     with open(data_label+'clean_val.txt','wb') as fp:
@@ -217,7 +216,7 @@ def main():
 
     print("TOTAL OF CANCER: {}, NON-CANCEROUS:{} IMAGES WERE SAVED FOR TRAIN".format(np.sum(train_label),len(train_label)-np.sum(train_label)))
     print("TOTAL OF CANCER: {}, NON-CANCEROUS:{} IMAGES WERE SAVED FOR VAL".format(np.sum(val_label),len(val_label)-np.sum(val_label)))
-    print("TOTAL OF CANCER: {}, NON-CANCEROUS:{} IMAGES WERE SAVED FOR TEST".format(np.sum(test_label),len(train_label)-np.sum(test_label)))
+    print("TOTAL OF CANCER: {}, NON-CANCEROUS:{} IMAGES WERE SAVED FOR TEST".format(np.sum(test_label),len(test_label)-np.sum(test_label)))
 
     print("AS THE DATA IS IMBALANCED, WE ADDED CLEAN IMAGES AS FOLLOWING")
     print("TRAIN: {}, VAL: {}, TEST: {}".format(len(clean_train_label),len(clean_val_label),len(clean_test_label)))

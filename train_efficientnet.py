@@ -46,7 +46,7 @@ def parse_args():
                         help='loss: ' +
                         ' | '.join(['Adam', 'SGD']) +
                         ' (default: Adam)')
-    parser.add_argument('--lr', '--learning_rate', default=1e-5, type=float,
+    parser.add_argument('--lr', '--learning_rate', default=1e-6, type=float,
                         metavar='LR', help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float,
                         help='momentum')
@@ -66,7 +66,6 @@ def train(train_loader,model,criterion,optimizer):
                 'specificity': AverageMeter()}
 
     model.train()
-
     pbar = tqdm(total=len(train_loader))
     for images, labels in train_loader:
         images = images.cuda()
@@ -146,10 +145,7 @@ def validate(val_loader,model,criterion):
                         ('specificity', avg_meters['specificity'].avg),])
 
 
-def load_directories(root_dir):
-    images_list = os.listdir(root_dir)
-    images_list.sort()
-    return [root_dir+ x for x in images_list]
+
 
 def main():
     # Get configuration
@@ -257,7 +253,7 @@ def main():
     log= pd.DataFrame(index=[],columns= ['epoch', 'loss', 'accuracy','sensitivity','specificity,',
                                         'val_loss', 'val_accuracy','val_sensitivity','val_specificity'])
 
-    best_sensitivity= 0
+    best_loss= 10
     trigger = 0
 
     for epoch in range(config['epochs']):
@@ -288,10 +284,10 @@ def main():
 
         trigger += 1
 
-        if val_log['sensitivity'] > best_sensitivity:
+        if val_log['loss'] < best_loss:
             torch.save(model.state_dict(), OUTPUT_DIR+'efficientnetb{}/model.pth'.format(config['model_version']))
-            best_sensitivity= val_log['sensitivity']
-            print("=> saved best model as validation sensitivity is greater than previous best sensitivity")
+            best_loss= val_log['loss']
+            print("=> saved best model as validation loss is greater than previous best loss")
             trigger = 0
 
         # early stopping

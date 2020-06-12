@@ -26,13 +26,13 @@ class ClassifierDataset(Dataset):
         self.albumentation = Albumentation
 
         self.albu_transformations =  albu.Compose([
-            ToTensorV2(),
             albu.Normalize(),
+            ToTensorV2(),
             OneOf([albu.HorizontalFlip(),
                    albu.VerticalFlip(),
                    albu.RandomRotate90(),
-                   ],p=0.2),
-            albu.ElasticTransform(alpha=1.1,alpha_affine=0.5,sigma=5,p=0.15),
+                   ],p=0.9)
+            #albu.ElasticTransform(alpha=1.1,alpha_affine=0.5,sigma=5,p=0.15),
         ])
         self.transformations = transforms.Compose([
             #transforms.Grayscale(3),

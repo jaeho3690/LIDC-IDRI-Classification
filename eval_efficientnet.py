@@ -65,9 +65,11 @@ def evaluate(model,test_loader):
         accuracy = (TP+TN)/ (TP +TN +FN +FP)
         sensitivity = TP / (TP+FN)
         specificity = TN / (TN+FP)
+        precision = TP / (TP+FP)
+        F1 = (2*sensitivity*precision)/(precision+sensitivity)
     torch.cuda.empty_cache()
 
-    return accuracy, sensitivity, specificity, TP,TN,FN,FP
+    return accuracy, sensitivity, specificity, precision,F1, TP,TN,FN,FP
 
 
 
@@ -135,14 +137,14 @@ def main():
 
     log= pd.DataFrame(index=[],columns= ['test_size','accuracy','sensitivity','specificity','TP','TN','FN','FP'])
 
-    accuracy, sensitivity, specificity, TP, TN, FN, FP = evaluate(model,test_loader)
+    accuracy, sensitivity, specificity, precision,F1, TP,TN,FN,FP = evaluate(model,test_loader)
 
     tmp = pd.Series([
         len(test_dataset),accuracy, sensitivity, specificity, TP, TN, FN, FP
     ], index=['test_size','accuracy','sensitivity','specificity','TP','TN','FN','FP'])
 
     print('Test accuracy:{:.4f}, Test sensitivity:{:.4f}, Testspecificity:{:.4f}'.format(accuracy,sensitivity,specificity))
-
+    print('Test precision:{:.4f}, Test F1:{:.4f}'.format(precision,F1))
     log = log.append(tmp,ignore_index=True)
     log.to_csv(OUTPUT_DIR +'test_result.csv',index=False)
     print("OUTPUT RESULT SAVED AS CSV in", OUTPUT_DIR)
